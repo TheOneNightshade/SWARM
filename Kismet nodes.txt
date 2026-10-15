@@ -1,0 +1,126 @@
+Kismet nodes are Dev only (Part 8): while locked, the app skips them and hides them; unlocked, they
+link as below and the **DEV** tab lists them.
+
+A Kismet node turns a Linux computer or Raspberry Pi that runs **Kismet** into one more Swarm node. A
+small program on it reads what Kismet finds and sends it to the Swarm app over Bluetooth, the same way a
+node board does. Kismet with good USB Wi-Fi adapters sees far more than one ESP32, so this adds a lot of
+coverage to a drive.
+
+- **Kismet decides what it scans.** Its radios, channels and data sources are set up in Kismet. The
+  app gives the Kismet node a number and starts and stops it, but can't change what it scans: on the
+  PLAN tab it shows **KISMET NODE: set up in Kismet**, and the auto plan spreads the channels over the
+  other nodes as before.
+- **Only during a scan.** While a scan runs, the node sends new devices Kismet finds (Wi-Fi networks
+  and Bluetooth devices, for the sensors that scan picked). Between scans it ignores Kismet.
+- **Nothing lost out of range.** If the phone goes away during a scan, the node keeps Kismet's finds on
+  the computer's disk and sends them when the phone is back, like a board does. It survives a reboot.
+- **Yours only.** It locks to your phone's owner key like a board (Part 5).
+
+### What you need
+
+- A Linux computer or Raspberry Pi (Pi 3, 4, 5 or Zero 2 W) with Kismet set up and working. The
+  program runs on 64-bit PCs, 64-bit Raspberry Pi OS and 32-bit Raspberry Pi OS.
+- Bluetooth on that computer (the Pi's built-in Bluetooth is fine), with the normal Linux Bluetooth
+  service running (it is on Raspberry Pi OS and most Linux systems).
+- **Keep that Bluetooth adapter out of Kismet.** The node uses it to talk to the phone, so don't add it
+  as a Kismet data source. If you want Kismet to scan Bluetooth too, plug in a second USB Bluetooth
+  adapter for Kismet and tell the node which adapter is its own (`-hci hci0`, below).
+
+### Install it
+
+1. Copy the `kismet-node` folder to the computer (USB stick, or `scp -r kismet-node pi@yourpi:`).
+2. On the computer, in that folder, run:
+   ```
+   sudo sh install.sh
+   ```
+   It picks the right program for the machine, installs it as a service that starts at every boot, and
+   starts it.
+3. Give it your Kismet login. Open the settings file:
+   ```
+   sudo nano /etc/default/swarm-kismet-node
+   ```
+   and change `-user kismet -pass changeme` to the name and password you made the first time you opened
+   Kismet's web page (`http://yourpi:2501`). Or use an API key from Kismet's settings:
+   `SWARM_KISMET_ARGS="-apikey YOURKEY"`. Then restart it:
+   ```
+   sudo systemctl restart swarm-kismet-node
+   ```
+4. Check it's happy:
+   ```
+   journalctl -u swarm-kismet-node -f
+   ```
+   You should see `advertising as WDU0` and `reading Kismet at http://localhost:2501`. A Kismet login
+   problem shows as `kismet: login refused`.
+
+Other options go on the same `SWARM_KISMET_ARGS` line. `swarm-kismet-node -help` lists them all. The
+useful ones:
+
+| Option | What it does |
+|---|---|
+| `-hci hci1` | Use this Bluetooth adapter for the phone (default: the first one). |
+| `-kismet http://10.0.0.5:2501` | Kismet runs on another computer. |
+| `-resend 5m` | Send a device Kismet still sees again after this long (default 5 minutes), in case the phone had no GPS fix the first time. |
+| `-max 1000000` | Most sightings kept for the phone while it's away (oldest go first). |
+| `-stdin` | Also read sightings piped in (below). |
+
+### Use it
+
+1. Start Kismet and the node (both start at boot once installed).
+2. Open Swarm and tap **FIND MY NODES** on the **BASIC** tab (or **CONNECT TO NODES** on **SWARM**). The Kismet node appears in the node list as **NODE N ·
+   KISMET** and locks to your phone ("Node N is now locked to this phone").
+3. Start a scan as usual. The node's row shows **KISMET LINK · SENDING KISMET'S SIGHTINGS** and its
+   finds go into the same log, placed by the phone's GPS. The computer needs no GPS of its own.
+4. Stop the scan as usual. The node goes back to ignoring Kismet.
+
+Its row shows the computer's CPU temperature, uptime and **PROGRAM BUILD n**. A Kismet node stays linked
+the whole time (it has no broadcast link), so it counts toward the phone's Bluetooth link limit (about
+7 linked nodes). Broadcasting Swarm nodes don't, so this only matters with many basic nodes.
+
+**Piping instead of the login.** If you'd rather pipe Kismet's output in, turn on Kismet's WiGLE log
+(`log_types=kismet,wiglecsv` in Kismet's config) and run the program yourself with the pipe:
+```
+sudo systemctl stop swarm-kismet-node
+tail -F /path/to/Kismet-*.wiglecsv | sudo swarm-kismet-node -kismet "" -stdin
+```
+Kismet's WiGLE log may only fill in once Kismet has a GPS fix of its own, which is why reading Kismet
+directly (the default) is easier in a car. The pipe also takes JSON lines, one device each:
+`{"type":"wifi","mac":"aa:bb:cc:dd:ee:ff","ssid":"Cafe","channel":6,"rssi":-60,"security":"WPA2"}`.
+
+**What it sends and skips.** Wi-Fi access points on 2.4 and 5 GHz, and Bluetooth devices. It skips
+Wi-Fi clients and probes (WiGLE wants access points), other radios Kismet may have (433 MHz sensors,
+aircraft, Zigbee), and 6 GHz networks (the app's log can't hold 6 GHz channel numbers yet). Each device
+goes once per scan (and again after `-resend` if still seen), so the Bluetooth link keeps up at highway
+speed.
+
+**Giving it to another phone.** Stop it, free it, start it:
+```
+sudo systemctl stop swarm-kismet-node
+sudo swarm-kismet-node -forget-owner
+sudo systemctl start swarm-kismet-node
+```
+
+**Updating it.** Copy the new `kismet-node` folder over and run `sudo sh install.sh` again. Your
+settings, owner and held sightings are kept (they live in `/var/lib/swarm-kismet-node`).
+
+---
+
+## Troubleshooting
+
+| Problem | Try this |
+|---|---|
+| Compile error `protocol.h: No such file or directory` | Open the `.ino` from inside the `wd_swarm_node` folder (File → Open), not a copy pasted into a new sketch. |
+| Serial Monitor says `link: direct` | Redo the `nimconfig.h` edit (Part 2, step 3) and upload again. |
+| A node never shows up in the app | Check it's powered and Serial Monitor shows `swarm node ready`. Then tap **DISCONNECT** and **CONNECT TO NODES** in the app. |
+| Stuck on **WAITING FOR GPS LOCK…** | Go outside or near a window. Make sure the phone's Location is on and set to high accuracy. |
+| A node lost its number or plan after flashing | **Erase All Flash Before Sketch Upload** was on. Turn it off; the phone will set the node up again. |
+| Want to swap a dead board for a new one | Tap **FORGET** on the old (offline) node, then **FORGET** again in the box that asks, to free its number. |
+| A node won't connect and the app says it belongs to someone else's Swarm | It's locked to another owner key: a different phone, or this phone before the app was reinstalled. Paste that key under **NODE LOCK**, or hold the node's BOOT button for 5 s. |
+| Want the numbers back in order | **RENUMBER NODES** numbers them again in the order they're heard next. |
+| An upload says the key or token was refused | Re-check it under **ACCOUNTS**. For WarDrift, sign in again. |
+| Node update says the firmware is too old | The node runs build 15 or older. Flash build 16 once by USB or the web flasher; after that the app can update it. |
+| Node update says "no update slot" | The board was flashed with a partition scheme without two app slots. On a DevKit pick **Minimal SPIFFS** (Arduino IDE) or use the web flasher, then flash once by USB. |
+| Node update says "timed out" | The node runs build 16 or 17, which have a bug that stops Bluetooth updates. App build 10 sends to them slowly and tries up to 6 times; if it still fails, flash build 18 once by USB or the web flasher. |
+| Node update stops partway | Keep the phone near the node and try again. The node keeps its old firmware until a whole, checked image is in. |
+| The Kismet node never shows up in the app | Run `journalctl -u swarm-kismet-node -f` on the computer. It should say `advertising as WDU0` or `WDN...`. If it says it can't reach bluetoothd, start Bluetooth (`sudo systemctl start bluetooth`). If Kismet uses the same Bluetooth adapter, give Kismet its own (Part 10). |
+| The Kismet node is linked but sends nothing | A scan has to be running in the app. Check the log for `kismet: login refused` (fix the login in `/etc/default/swarm-kismet-node`) and that Kismet's own web page shows devices. |
+| Forgot the Dev password | Clear the app's storage (Android Settings → Apps → Swarm → Storage). That also resets the owner key, so copy it out first (ABOUT SWARM → NODE LOCK). The password goes back to the default. |
