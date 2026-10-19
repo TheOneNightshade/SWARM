@@ -1,5 +1,9 @@
 # SWARM: How to use it
 
+https://youtu.be/w_rQckFAnSc?is=aeWgg8o6iiSZXcTs
+
+
+
 SWARM turns a few small boards ("nodes") and your Android phone into one wardriving rig. Each node
 scans Wi-Fi and Bluetooth and sends what it finds to your phone. The phone adds the GPS position,
 scans too, and saves everything in one log you can upload to WiGLE, WDGWars or WarDrift.
